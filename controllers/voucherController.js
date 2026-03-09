@@ -3,6 +3,7 @@ const Voucher = require('../models/Voucher');
 const User = require('../models/User');
 const Settings = require('../models/Settings');
 const Transaction = require('../models/Transaction');
+const { getIO } = require('../socket');
 
 // POST /api/vouchers - Create voucher (admin)
 const createVoucher = async (req, res) => {
@@ -63,6 +64,22 @@ const getVouchers = async (req, res) => {
 
     if (req.user.role === 'student') {
       query.assignedTo = req.user._id;
+
+      // Fix stuck vouchers: reset expired pending_redeem back to assigned
+      await Voucher.updateMany(
+        {
+          assignedTo: req.user._id,
+          status: 'pending_redeem',
+          'activeBarcode.expiresAt': { $lt: new Date() }
+        },
+        {
+          $set: {
+            status: 'assigned',
+            'activeBarcode.code': null,
+            'activeBarcode.expiresAt': null
+          }
+        }
+      );
     }
 
     const vouchers = await Voucher.find(query)
@@ -87,6 +104,17 @@ const generateBarcode = async (req, res) => {
     if (voucher.assignedTo.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'שובר לא שייך לך' });
     }
+
+    // Fix: allow re-generating barcode for expired pending_redeem
+    if (voucher.status === 'pending_redeem') {
+      if (voucher.activeBarcode.expiresAt && new Date() > new Date(voucher.activeBarcode.expiresAt)) {
+        voucher.status = 'assigned';
+        voucher.activeBarcode = { code: null, expiresAt: null };
+      } else {
+        return res.status(400).json({ message: 'כבר יש ברקוד פעיל לשובר זה' });
+      }
+    }
+
     if (voucher.status !== 'assigned') {
       return res.status(400).json({ message: 'שובר לא זמין למימוש' });
     }
@@ -129,6 +157,15 @@ const scanBarcode = async (req, res) => {
       await voucher.save();
       return res.status(400).json({ message: 'ברקוד פג תוקף', valid: false });
     }
+
+    // Notify student that their barcode was scanned
+    try {
+      getIO().to(voucher.assignedTo._id.toString()).emit('voucher:scanned', {
+        voucherId: voucher._id,
+        amount: voucher.amount,
+        businessName: req.user.businessName || req.user.name
+      });
+    } catch (e) {}
 
     res.json({
       valid: true,
@@ -173,6 +210,15 @@ const redeemVoucher = async (req, res) => {
       business: req.user._id,
       amount: voucher.amount
     });
+
+    // Notify student that voucher was redeemed
+    try {
+      getIO().to(voucher.assignedTo.toString()).emit('voucher:redeemed', {
+        voucherId: voucher._id,
+        amount: voucher.amount,
+        businessName: req.user.businessName || req.user.name
+      });
+    } catch (e) {}
 
     res.json({ message: 'שובר מומש בהצלחה!', voucher });
   } catch (error) {
