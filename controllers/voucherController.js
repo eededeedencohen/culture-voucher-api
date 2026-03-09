@@ -262,7 +262,21 @@ const getStats = async (req, res) => {
   }
 };
 
+// GET /api/vouchers/history - Get redemption history (business)
+const getRedemptionHistory = async (req, res) => {
+  try {
+    const transactions = await Transaction.find({ business: req.user._id })
+      .populate('voucher', 'code amount description')
+      .populate('student', 'name email studentId')
+      .sort('-createdAt');
+
+    res.json(transactions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createVoucher, assignVoucher, getVouchers,
-  generateBarcode, scanBarcode, redeemVoucher, getStats
+  generateBarcode, scanBarcode, redeemVoucher, getStats, getRedemptionHistory
 };
