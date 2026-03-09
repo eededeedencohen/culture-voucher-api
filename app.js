@@ -20,7 +20,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/users', userRoutes);
 
 // Serve static files from client build (middle layer)
-const clientBuildPath = path.join(__dirname, '..', 'client', 'dist');
+const clientBuildPath = path.join(__dirname, 'dist');
 app.use(express.static(clientBuildPath));
 
 // Catch-all: serve index.html for SPA routing
