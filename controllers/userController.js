@@ -47,10 +47,22 @@ const updateProfile = async (req, res) => {
       return res.status(404).json({ message: 'משתמש לא נמצא' });
     }
 
-    const { name, currentPassword, newPassword } = req.body;
+    const { name, username, currentPassword, newPassword } = req.body;
 
     if (name) {
       user.name = name;
+    }
+
+    if (username !== undefined) {
+      if (username) {
+        const usernameExists = await User.findOne({ username: username.toLowerCase(), _id: { $ne: user._id } });
+        if (usernameExists) {
+          return res.status(400).json({ message: 'שם המשתמש כבר תפוס' });
+        }
+        user.username = username.toLowerCase();
+      } else {
+        user.username = undefined;
+      }
     }
 
     if (newPassword) {
@@ -71,6 +83,7 @@ const updateProfile = async (req, res) => {
 
     res.json({
       _id: user._id,
+      username: user.username,
       name: user.name,
       email: user.email,
       role: user.role,
